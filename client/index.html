@@ -2091,7 +2091,7 @@
         const data = await r.json();
         if (data.error) throw new Error(data.error);
         allCandles = data.candles;
-        renderAll();
+        renderAll(true);
         $('ftSym').textContent = symbol; $('ftTf').textContent = tf;
         $('ftCount').textContent = allCandles.length + ' candles';
         $('ftCandles').textContent = tf;
@@ -2105,7 +2105,7 @@
       } catch (err) { setStatus('err: ' + err.message); console.error(err) }
     }
 
-    function renderAll() {
+    function renderAll(fit = false) {
       if (!allCandles.length) return;
       const closes = allCandles.map(c => +c.close);
       const n = closes.length;
@@ -2183,9 +2183,11 @@
         try { candleSeries.setMarkers([]) } catch (e) { }
       }
 
-      mainChart.timeScale().fitContent();
-      if (indOn.RSI) try { rsiChart.timeScale().fitContent() } catch (e) { }
-      if (indOn.MACD) try { macdChart.timeScale().fitContent() } catch (e) { }
+      if (fit) {
+        mainChart.timeScale().fitContent();
+        if (indOn.RSI) try { rsiChart.timeScale().fitContent() } catch (e) { }
+        if (indOn.MACD) try { macdChart.timeScale().fitContent() } catch (e) { }
+      }
 
       drawVPVR(allCandles);
       updateSidebar(allCandles);
