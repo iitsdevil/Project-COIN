@@ -1025,7 +1025,7 @@ function renderAll(){
   if(indOn.SR){
     const levels=detectSR(allCandles);
     levels.forEach(lv=>{
-      const line=mainChart.addPriceLine({price:lv.price,color:lv.type==='resistance'?'rgba(246,70,93,.5)':'rgba(14,203,129,.5)',lineWidth:1,lineStyle:lv.strength>=4?0:2,axisLabelVisible:true,title:lv.type==='resistance'?`R(${lv.strength})`:`S(${lv.strength})`});
+      const line=candleSeries.createPriceLine({price:lv.price,color:lv.type==='resistance'?'rgba(246,70,93,.5)':'rgba(14,203,129,.5)',lineWidth:1,lineStyle:lv.strength>=4?0:2,axisLabelVisible:true,title:lv.type==='resistance'?`R(${lv.strength})`:`S(${lv.strength})`});
       srLines.push(line);
     });
   }
@@ -1040,7 +1040,7 @@ function renderAll(){
       try{
         const series=mainChart.addRectanglePriceLine?null:null; // lightweight-charts doesn't have native rectangles
         // Use a horizontal band via price line instead
-        const line=mainChart.addPriceLine({price:(ob.top+ob.bottom)/2,color:ob.type==='bullish'?'rgba(14,203,129,.4)':'rgba(246,70,93,.4)',lineWidth:2,lineStyle:2,axisLabelVisible:false,title:ob.type==='bullish'?'Bull OB':'Bear OB'});
+        const line=candleSeries.createPriceLine({price:(ob.top+ob.bottom)/2,color:ob.type==='bullish'?'rgba(14,203,129,.4)':'rgba(246,70,93,.4)',lineWidth:2,lineStyle:2,axisLabelVisible:false,title:ob.type==='bullish'?'Bull OB':'Bear OB'});
         obBoxes.push(line);
       }catch(e){}
     });
@@ -1087,8 +1087,8 @@ function updateToolbarIndicators(e20,e50,e200,rsiArr,ml,n){
   $('ivMacd').textContent=ml[n-1]?ml[n-1].toFixed(4):'—';
 }
 
-function clearSRLines(){if(!mainChart)return;srLines.forEach(l=>{try{mainChart.removePriceLine(l)}catch(e){}});srLines=[]}
-function clearOBBoxes(){if(!mainChart)return;obBoxes.forEach(l=>{try{mainChart.removePriceLine(l)}catch(e){}});obBoxes=[]}
+function clearSRLines(){if(!candleSeries)return;srLines.forEach(l=>{try{candleSeries.removePriceLine(l)}catch(e){}});srLines=[]}
+function clearOBBoxes(){if(!candleSeries)return;obBoxes.forEach(l=>{try{candleSeries.removePriceLine(l)}catch(e){}});obBoxes=[]}
 
 // MTF
 async function loadMTF(symbol){
