@@ -449,6 +449,22 @@
       background: rgba(0, 229, 255, .07)
     }
 
+    .ind-btn[data-ind="ICH"].on {
+      color: #a29bfe;
+      border-color: #a29bfe;
+      background: rgba(162, 155, 254, .07)
+    }
+
+    /* Backtest card */
+    .bt-stat { display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--b1);font-size:9px }
+    .bt-stat:last-child { border-bottom:none }
+    .bt-stat .sk { color:var(--muted) }
+    .bt-stat .sv { color:var(--txt);font-weight:500 }
+    .bt-stat .sv.up { color:var(--up) }
+    .bt-stat .sv.dn { color:var(--down) }
+    .bt-run-btn { background:rgba(240,185,11,.15);border:1px solid var(--accent);color:var(--accent);font-family:var(--font);font-size:10px;padding:4px 8px;border-radius:3px;cursor:pointer;transition:background .15s;width:100%;margin-top:6px }
+    .bt-run-btn:hover { background:rgba(240,185,11,.25) }
+
     .ws-status {
       display: flex;
       align-items: center;
@@ -1360,6 +1376,7 @@
         <button class="ind-btn on" data-ind="DIV">DIV</button>
         <button class="ind-btn on" data-ind="PAT">PAT</button>
         <button class="ind-btn on" data-ind="FVG">FVG</button>
+        <button class="ind-btn" data-ind="ICH">ICH</button>
       </div>
 
       <div class="ws-status">
@@ -1382,6 +1399,18 @@
         <span class="tb-label">Funding</span>
         <span class="funding-val" id="fundingVal">—</span>
         <span class="tb-label" id="fundingNext"></span>
+      </div>
+      <div class="tb-section">
+        <span class="tb-label">OI</span>
+        <span class="tb-val" id="tbOI">—</span>
+      </div>
+      <div class="tb-section">
+        <span class="tb-label">L/S</span>
+        <span class="tb-val" id="tbLS">—</span>
+      </div>
+      <div class="tb-section">
+        <span class="tb-label">F&amp;G</span>
+        <span class="tb-val" id="tbFG">—</span>
       </div>
       <div class="tb-section">
         <span class="tb-label">24h High</span><span class="tb-val up" id="tbHigh">—</span>
@@ -1423,6 +1452,7 @@
             <div class="iv" style="color:var(--rsi-c)"><span class="il">RSI</span><span id="ivRsi">—</span></div>
             <div class="iv" style="color:var(--macd-l)"><span class="il">MACD</span><span id="ivMacd">—</span></div>
             <div class="iv" style="color:var(--bb)"><span class="il">BB%</span><span id="ivBbPct">—</span></div>
+            <div class="iv" style="color:#fd79a8"><span class="il">ATR</span><span id="ivATR">—</span></div>
           </div>
         </div>
         <div class="charts-container" id="chartsContainer">
@@ -1493,6 +1523,18 @@
                 <td class="sk" style="font-weight:600">Overall</td>
                 <td class="sv" id="sg-overall" style="font-size:11px;font-weight:700">—</td>
               </tr>
+              <tr>
+                <td class="sk" style="font-weight:600">Confluence</td>
+                <td class="sv" id="sg-confluence">—</td>
+              </tr>
+              <tr>
+                <td class="sk">ATR SL</td>
+                <td class="sv" id="sg-atr-sl" style="color:var(--down)">—</td>
+              </tr>
+              <tr>
+                <td class="sk">ATR TP</td>
+                <td class="sv" id="sg-atr-tp" style="color:var(--up)">—</td>
+              </tr>
             </table>
           </div>
           <div class="candle-feed">
@@ -1517,7 +1559,7 @@
           <div class="tape-feed" id="tapeFeed"></div>
         </div>
 
-        <!-- MORE PANE (Correlation + Alerts) -->
+        <!-- MORE PANE (Correlation + Alerts + Backtest) -->
         <div class="aside-pane" id="pane-more">
           <div class="aside-sec">
             <div class="aside-title">Alerts</div>
@@ -1526,6 +1568,11 @@
               <button class="alert-add-btn" id="alertAddBtn">+ Add</button>
             </div>
             <div id="alertList"></div>
+          </div>
+          <div class="aside-sec">
+            <div class="aside-title">Backtest (EMA+RSI signal)</div>
+            <div id="btResults"><div style="color:var(--muted);font-size:9px">Click Run to backtest on stored candles</div></div>
+            <button class="bt-run-btn" id="btRunBtn">▶ Run Backtest</button>
           </div>
           <div class="aside-sec" style="flex:1;overflow-y:auto">
             <div class="aside-title">Correlation (vs BTC)</div>
@@ -1564,7 +1611,7 @@
     let mtfData = {}, corrData = {}, fundingData = {};
     let tickCount = 0;
 
-    const indOn = { EMA: true, BB: true, SR: true, OB: true, RSI: true, MACD: true, VOL: true, DIV: true, PAT: true, FVG: true };
+    const indOn = { EMA: true, BB: true, SR: true, OB: true, RSI: true, MACD: true, VOL: true, DIV: true, PAT: true, FVG: true, ICH: false };
 
     // ════════════════════════════════════════════════════════════════════
     // UTILS
@@ -1664,6 +1711,42 @@
       const sl = ml.map(v => { if (v != null) vi++; return v != null && vi >= 0 ? sr[vi] : null });
       const hist = ml.map((v, i) => v != null && sl[i] != null ? v - sl[i] : null);
       return { macdLine: ml, sigLine: sl, hist };
+    }
+
+    function calcIchimoku(candles) {
+      const highs = candles.map(c => +c.high), lows = candles.map(c => +c.low);
+      const n = candles.length;
+      const ph = (arr, i, p) => { let h = -Infinity; for (let j = Math.max(0,i-p+1); j<=i; j++) h=Math.max(h,arr[j]); return h; };
+      const pl = (arr, i, p) => { let l = Infinity; for (let j = Math.max(0,i-p+1); j<=i; j++) l=Math.min(l,arr[j]); return l; };
+      const tenkan = [], kijun = [], senkouA = [], senkouB = [], chikou = [];
+      for (let i = 0; i < n; i++) {
+        tenkan.push(i>=8  ? (ph(highs,i,9)+pl(lows,i,9))/2 : null);
+        kijun.push( i>=25 ? (ph(highs,i,26)+pl(lows,i,26))/2 : null);
+        // Senkou projected 26 forward in the array (store at actual position for chart overlay)
+        senkouA.push(tenkan[i]!=null&&kijun[i]!=null ? (tenkan[i]+kijun[i])/2 : null);
+        senkouB.push(i>=51 ? (ph(highs,i,52)+pl(lows,i,52))/2 : null);
+        chikou.push(+candles[i].close);
+      }
+      return { tenkan, kijun, senkouA, senkouB, chikou };
+    }
+
+    function calcATR(candles, p = 14) {
+      if (candles.length < 2) return [];
+      const tr = [null];
+      for (let i = 1; i < candles.length; i++) {
+        const h = +candles[i].high, l = +candles[i].low, pc = +candles[i-1].close;
+        tr.push(Math.max(h-l, Math.abs(h-pc), Math.abs(l-pc)));
+      }
+      const atr = [null];
+      let avg = 0;
+      for (let i = 1; i <= p && i < tr.length; i++) avg += tr[i]; avg /= p;
+      atr.push(...new Array(p - 1).fill(null));
+      if (tr.length >= p + 1) atr[p] = avg;
+      for (let i = p + 1; i < tr.length; i++) {
+        avg = (avg * (p - 1) + tr[i]) / p;
+        atr.push(avg);
+      }
+      return atr;
     }
 
     // ── Support & Resistance ────────────────────────────────────────────
@@ -2026,6 +2109,14 @@
       bbDnS = mainChart.addLineSeries({ color: 'rgba(123,97,255,.5)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, ...pf4 });
       bbMidS = mainChart.addLineSeries({ color: 'rgba(123,97,255,.25)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, ...pf4 });
 
+      // Ichimoku — all hidden until ICH toggled on
+      const ichOpts = { ...pf4, priceLineVisible: false, lastValueVisible: false, visible: false };
+      window.ichTenkan  = mainChart.addLineSeries({ color: '#a29bfe', lineWidth: 1, ...ichOpts });
+      window.ichKijun   = mainChart.addLineSeries({ color: '#fd79a8', lineWidth: 1.5, ...ichOpts });
+      window.ichSlowA   = mainChart.addLineSeries({ color: 'rgba(0,229,255,.6)', lineWidth: 1, ...ichOpts });
+      window.ichSlowB   = mainChart.addLineSeries({ color: 'rgba(255,107,107,.6)', lineWidth: 1, ...ichOpts });
+      window.ichChikou  = mainChart.addLineSeries({ color: 'rgba(162,155,254,.5)', lineWidth: 1, lineStyle: 2, ...ichOpts });
+
       // RSI
       const re = $('rsiChart');
       rsiChart = LightweightCharts.createChart(re, { ...COPTS, rightPriceScale: { borderColor: '#1a1f26' } });
@@ -2075,6 +2166,8 @@
       [ema20S, ema50S, ema200S].forEach(s => s.applyOptions({ visible: indOn.EMA }));
       [bbUpS, bbDnS, bbMidS].forEach(s => s.applyOptions({ visible: indOn.BB }));
       volSeries.applyOptions({ visible: indOn.VOL });
+      [window.ichTenkan, window.ichKijun, window.ichSlowA, window.ichSlowB, window.ichChikou]
+        .forEach(s => s && s.applyOptions({ visible: indOn.ICH }));
       $('rsiWrap').style.display = indOn.RSI ? 'block' : 'none';
       $('macdWrap').style.display = indOn.MACD ? 'block' : 'none';
       $('vpvrCanvas').style.display = 'block';
@@ -2102,6 +2195,9 @@
         loadMTF(symbol);
         loadFunding(symbol);
         loadCorrelations();
+        loadOpenInterest(symbol);
+        loadLongShort(symbol);
+        loadFearGreed();
       } catch (err) { setStatus('err: ' + err.message); console.error(err) }
     }
 
@@ -2160,17 +2256,37 @@
         });
       }
 
-      // FVGs
+      // FVGs — with fill detection (skip gaps that price has already traded through)
       clearFVGs();
       if (indOn.FVG) {
         const fvgs = detectFVG(allCandles);
         fvgs.forEach(fvg => {
+          // Check if any subsequent candle filled this gap
+          const filled = allCandles.some(c => {
+            const h = +c.high, l = +c.low;
+            return (fvg.type === 'bullish' && l <= fvg.bottom) ||
+                   (fvg.type === 'bearish' && h >= fvg.top);
+          });
+          if (filled) return; // skip filled FVGs
           try {
-            const c = fvg.type === 'bullish' ? 'rgba(0,229,255,.5)' : 'rgba(255,107,107,.5)';
-            fvgBoxes.push(candleSeries.createPriceLine({ price: fvg.top, color: c, lineWidth: 1, lineStyle: 0, axisLabelVisible: false }));
-            fvgBoxes.push(candleSeries.createPriceLine({ price: fvg.bottom, color: c, lineWidth: 1, lineStyle: 0, axisLabelVisible: false }));
+            const col = fvg.type === 'bullish' ? 'rgba(0,229,255,.5)' : 'rgba(255,107,107,.5)';
+            fvgBoxes.push(candleSeries.createPriceLine({ price: fvg.top, color: col, lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: fvg.type === 'bullish' ? 'FVG↑' : 'FVG↓' }));
+            fvgBoxes.push(candleSeries.createPriceLine({ price: fvg.bottom, color: col, lineWidth: 1, lineStyle: 0, axisLabelVisible: false }));
           } catch (e) { }
         });
+      }
+
+      // Ichimoku
+      if (indOn.ICH && window.ichTenkan) {
+        const ich = calcIchimoku(allCandles);
+        window.ichTenkan.setData(toLine(ich.tenkan));
+        window.ichKijun.setData(toLine(ich.kijun));
+        window.ichSlowA.setData(toLine(ich.senkouA));
+        window.ichSlowB.setData(toLine(ich.senkouB));
+        window.ichChikou.setData(allCandles.map((c,i) => ({ time: tsToChart(c.ts), value: ich.chikou[i] })));
+      } else if (window.ichTenkan && !indOn.ICH) {
+        [window.ichTenkan,window.ichKijun,window.ichSlowA,window.ichSlowB,window.ichChikou]
+          .forEach(s => { try { s.setData([]) } catch(e){} });
       }
 
       // Divergence markers
@@ -2195,14 +2311,14 @@
 
       const sig = computeSignal(allCandles);
       updateSignalUI(sig);
-      updateToolbarIndicators(e20, e50, e200, rsiArr, ml, n);
+      updateToolbarIndicators(e20, e50, e200, rsiArr, ml, n, allCandles);
 
       // Pattern description
       const pats = detectPatterns(allCandles);
       $('tbPatterns').textContent = pats.length ? pats.slice(-2).map(p => p.text).join(', ') : 'None detected';
     }
 
-    function updateToolbarIndicators(e20, e50, e200, rsiArr, ml, n) {
+    function updateToolbarIndicators(e20, e50, e200, rsiArr, ml, n, candles) {
       $('tbEma20').textContent = e20[n - 1] ? fmt(e20[n - 1]) : '—';
       $('tbEma50').textContent = e50[n - 1] ? fmt(e50[n - 1]) : '—';
       const _e200 = e200 || calcEMA(allCandles.map(c => +c.close), 200);
@@ -2214,6 +2330,12 @@
       $('ivE200').textContent = _e200[n - 1] ? fmt(_e200[n - 1]) : '—';
       $('ivRsi').textContent = rsiArr[n - 1] ? rsiArr[n - 1].toFixed(1) : '—';
       $('ivMacd').textContent = ml[n - 1] ? ml[n - 1].toFixed(4) : '—';
+      // ATR
+      if (candles && candles.length) {
+        const atrArr = calcATR(candles, 14);
+        const atrVal = atrArr[atrArr.length - 1];
+        if (atrVal != null && $('ivATR')) $('ivATR').textContent = fmt(atrVal, 4);
+      }
     }
 
     function clearSRLines() { if (!candleSeries) return; srLines.forEach(l => { try { candleSeries.removePriceLine(l) } catch (e) { } }); srLines = [] }
@@ -2260,6 +2382,44 @@
           el.textContent = pct + '%';
           el.className = 'funding-val ' + (data.fundingRate > 0 ? 'pos' : 'neg');
           if (data.nextFundingTime) $('fundingNext').textContent = 'next: ' + new Date(data.nextFundingTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        }
+      } catch (e) { }
+    }
+
+    // Open Interest
+    async function loadOpenInterest(symbol) {
+      try {
+        const r = await fetch(`/api/openinterest?symbol=${encodeURIComponent(symbol)}`);
+        const data = await r.json();
+        const el = $('tbOI');
+        if (el && data.openInterest != null) el.textContent = fmtVol(data.openInterest);
+      } catch (e) { }
+    }
+
+    // Long/Short Ratio
+    async function loadLongShort(symbol) {
+      try {
+        const r = await fetch(`/api/longshortratio?symbol=${encodeURIComponent(symbol)}`);
+        const data = await r.json();
+        const el = $('tbLS');
+        if (el && data.longPct != null) {
+          el.textContent = `L${data.longPct}% / S${data.shortPct}%`;
+          el.style.color = data.longPct > 55 ? 'var(--up)' : data.shortPct > 55 ? 'var(--down)' : 'var(--txt)';
+        }
+      } catch (e) { }
+    }
+
+    // Fear & Greed Index
+    async function loadFearGreed() {
+      try {
+        const r = await fetch('https://api.alternative.me/fng/?limit=1');
+        const data = await r.json();
+        const el = $('tbFG');
+        if (el && data.data && data.data[0]) {
+          const val = +data.data[0].value;
+          const cls = data.data[0].value_classification;
+          el.textContent = `${val} (${cls})`;
+          el.style.color = val < 35 ? 'var(--down)' : val > 65 ? 'var(--up)' : 'var(--accent)';
         }
       } catch (e) { }
     }
@@ -2373,6 +2533,31 @@
       $('sg-overall').textContent = sig.overall + ' (' + sig.score + ')';
       $('sg-overall').className = 'sv ' + (sig.overall === 'BUY' ? 'bull' : sig.overall === 'SELL' ? 'bear' : 'neut');
       if (sig.bbPct != null) $('ivBbPct').textContent = sig.bbPct.toFixed(1) + '%';
+
+      // Confluence rating
+      const absScore = Math.abs(sig.score);
+      let cLabel = 'Low', cColor = 'var(--muted)';
+      if (absScore >= 4.5) { cLabel = 'VERY HIGH'; cColor = sig.score > 0 ? 'var(--up)' : 'var(--down)'; }
+      else if (absScore >= 3) { cLabel = 'HIGH'; cColor = sig.score > 0 ? 'var(--up)' : 'var(--down)'; }
+      else if (absScore >= 1.5) { cLabel = 'MEDIUM'; cColor = 'var(--accent)'; }
+      else { cLabel = 'LOW'; cColor = 'var(--muted)'; }
+      const cfEl = $('sg-confluence');
+      if (cfEl) { cfEl.textContent = cLabel; cfEl.style.color = cColor; }
+
+      // ATR Stop-Loss / Take-Profit
+      if (allCandles.length) {
+        const atrArr = calcATR(allCandles, 14);
+        const atrVal = atrArr[atrArr.length - 1];
+        const price = +allCandles[allCandles.length - 1].close;
+        if (atrVal) {
+          const dir = sig.overall === 'SELL' ? -1 : 1;
+          const sl = price - dir * 1.5 * atrVal;
+          const tp = price + dir * 3.0 * atrVal;
+          const slEl = $('sg-atr-sl'), tpEl = $('sg-atr-tp');
+          if (slEl) slEl.textContent = fmt(sl);
+          if (tpEl) tpEl.textContent = fmt(tp);
+        }
+      }
     }
 
     function updateLivePrice(price) {
@@ -2627,6 +2812,40 @@
         if (allCandles.length) renderAll();
       });
     });
+
+    // Backtest runner
+    const btBtn = $('btRunBtn');
+    if (btBtn) {
+      btBtn.addEventListener('click', async () => {
+        const resultsEl = $('btResults');
+        btBtn.textContent = '⏳ Running...';
+        btBtn.disabled = true;
+        try {
+          const sym = $('symName').textContent || 'BTC/USDT';
+          const tf = document.querySelector('.tf-btn.active')?.dataset.tf || '1h';
+          const r = await fetch(`/api/backtest?symbol=${encodeURIComponent(sym)}&timeframe=${tf}`);
+          const d = await r.json();
+          if (d.error) {
+            resultsEl.innerHTML = `<div style="color:var(--down);font-size:9px">${d.error}</div>`;
+          } else {
+            const wr = d.winRate >= 55 ? 'up' : d.winRate < 45 ? 'dn' : '';
+            const ex = d.expectancy >= 0 ? 'up' : 'dn';
+            resultsEl.innerHTML = `
+              <div class="bt-stat"><span class="sk">Symbol</span><span class="sv">${d.symbol} ${d.timeframe}</span></div>
+              <div class="bt-stat"><span class="sk">Total Signals</span><span class="sv">${d.totalTrades}</span></div>
+              <div class="bt-stat"><span class="sk">Win Rate</span><span class="sv ${wr}">${d.winRate}%</span></div>
+              <div class="bt-stat"><span class="sk">Avg Win</span><span class="sv up">+${d.avgWin}%</span></div>
+              <div class="bt-stat"><span class="sk">Avg Loss</span><span class="sv dn">${d.avgLoss}%</span></div>
+              <div class="bt-stat"><span class="sk">Max Drawdown</span><span class="sv dn">${d.maxDrawdown}%</span></div>
+              <div class="bt-stat"><span class="sk">Expectancy</span><span class="sv ${ex}">${d.expectancy >= 0 ? '+' : ''}${d.expectancy}%</span></div>`;
+          }
+        } catch (e) {
+          resultsEl.innerHTML = `<div style="color:var(--down);font-size:9px">Error: ${e.message}</div>`;
+        }
+        btBtn.textContent = '▶ Run Backtest';
+        btBtn.disabled = false;
+      });
+    }
 
     $$('.aside-tab').forEach(tab => {
       tab.addEventListener('click', () => {
